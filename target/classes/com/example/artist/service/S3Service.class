@@ -1,0 +1,108 @@
+//
+// Source code recreated from a .class file by IntelliJ IDEA
+// (powered by FernFlower decompiler)
+//
+
+package com.example.artist.service;
+
+import com.amazonaws.auth.AWSStaticCredentialsProvider;
+import com.amazonaws.auth.BasicAWSCredentials;
+import com.amazonaws.services.s3.AmazonS3;
+import com.amazonaws.services.s3.AmazonS3ClientBuilder;
+import com.amazonaws.services.s3.model.CannedAccessControlList;
+import com.amazonaws.services.s3.model.ListObjectsV2Request;
+import com.amazonaws.services.s3.model.ListObjectsV2Result;
+import com.amazonaws.services.s3.model.ObjectMetadata;
+import com.amazonaws.services.s3.model.PutObjectRequest;
+import com.amazonaws.services.s3.model.S3ObjectSummary;
+import com.example.artist.repository.ArtistRepository;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+@Service
+public class S3Service {
+    private AmazonS3 s3Client;
+    private static final Logger logger = LoggerFactory.getLogger(S3Service.class);
+    @Autowired
+    private ArtistRepository artistRepository;
+    private final String bucketName = "artist-capston";
+
+    public S3Service() {
+        aws.accessKeyId=${AWS_ACCESS_KEY_ID};
+        aws.secretKey=${AWS_SECRET_ACCESS_KEY};
+        this.s3Client = (AmazonS3)((AmazonS3ClientBuilder)((AmazonS3ClientBuilder)AmazonS3ClientBuilder.standard().withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(accessKey, secretKey)))).withRegion("ap-northeast-2")).build();
+    }
+
+    public void uploadFile(String foldername, MultipartFile file) {
+        String key = foldername + "/images/" + file.getOriginalFilename();
+        ObjectMetadata metadata = new ObjectMetadata();
+        metadata.setContentLength(file.getSize());
+        metadata.setContentType(file.getContentType());
+
+        try {
+            this.s3Client.putObject("artist-capston", key, file.getInputStream(), metadata);
+            this.s3Client.setObjectAcl("artist-capston", key, CannedAccessControlList.PublicRead);
+        } catch (IOException var6) {
+            throw new RuntimeException("Failed to upload file", var6);
+        }
+    }
+
+    public void createFolder(String name) {
+        String folderKey = name + "/";
+        ObjectMetadata metadata = new ObjectMetadata();
+        metadata.setContentLength(0L);
+        ByteArrayInputStream emptyContent = new ByteArrayInputStream(new byte[0]);
+        PutObjectRequest putObjectRequest = new PutObjectRequest("artist-capston", folderKey, emptyContent, metadata);
+
+        try {
+            this.s3Client.putObject(putObjectRequest);
+            logger.info("Folder created in S3: {}", folderKey);
+        } catch (Exception var7) {
+            logger.error("Error creating folder in S3: ", var7);
+            throw var7;
+        }
+    }
+
+    public List<String> getTopLevelFolders() {
+        List<String> topLevelFolders = new ArrayList();
+        ListObjectsV2Request listObjectsRequest = (new ListObjectsV2Request()).withBucketName("artist-capston").withDelimiter("/");
+        ListObjectsV2Result result = this.s3Client.listObjectsV2(listObjectsRequest);
+        Iterator var4 = result.getCommonPrefixes().iterator();
+
+        while(var4.hasNext()) {
+            String prefix = (String)var4.next();
+            topLevelFolders.add(prefix.replace("/", ""));
+        }
+
+        return topLevelFolders;
+    }
+
+    public List<String> getArtistImages(String artistName) {
+        List<String> imageUrls = new ArrayList();
+        String prefix = artistName + "/images/";
+        ListObjectsV2Request listObjectsRequest = (new ListObjectsV2Request()).withBucketName("artist-capston").withPrefix(prefix).withDelimiter("/");
+        ListObjectsV2Result result = this.s3Client.listObjectsV2(listObjectsRequest);
+        Iterator var6 = result.getObjectSummaries().iterator();
+
+        while(true) {
+            S3ObjectSummary summary;
+            do {
+                if (!var6.hasNext()) {
+                    return imageUrls;
+                }
+
+                summary = (S3ObjectSummary)var6.next();
+            } while(!summary.getKey().endsWith(".jpg") && !summary.getKey().endsWith(".jpeg") && !summary.getKey().endsWith(".png"));
+
+            imageUrls.add("https://artist-capston.s3.ap-northeast-2.amazonaws.com/" + summary.getKey());
+        }
+    }
+}
